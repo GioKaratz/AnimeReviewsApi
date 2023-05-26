@@ -2,6 +2,10 @@
 using AnimeReviewsData.Data;
 using AnimeReviewsData.Model;
 using Microsoft.AspNetCore.OpenApi;
+using AnimeReviewsData.Contracts;
+using AutoMapper;
+using AnimeReviewsApi.DTOs;
+using Microsoft.AspNetCore.Mvc;
 
 namespace AnimeReviewsApi.Endpoints;
 
@@ -11,62 +15,100 @@ public static class ReviewEndpoints
     {
         var group = routes.MapGroup("/api/Review").WithTags(nameof(Review));
 
-        group.MapGet("/", async (AnimeReviewDbContext db) =>
+        group.MapGet("/", (IReviewRepository repo, IMapper mapper) =>
         {
-            return await db.Reviews.ToListAsync();
+            var reviews = mapper.Map<List<ReviewDto>>(repo.GetReviews());
+            return Results.Ok(reviews);
         })
         .WithName("GetAllReviews")
         .WithOpenApi()
-        .Produces<List<Review>>(StatusCodes.Status200OK);
+        .Produces<List<ReviewDto>>(StatusCodes.Status200OK);
 
-        group.MapGet("/{id}", async (int id, AnimeReviewDbContext db) =>
+        group.MapGet("/{id}", (int id, IReviewRepository repo, IMapper mapper) =>
         {
-            return await db.Reviews.AsNoTracking()
-                .FirstOrDefaultAsync(model => model.Id == id)
-                is Review model
-                    ? Results.Ok(model)
-                    : Results.NotFound();
+            if (!repo.ReviewExists(id))
+                return Results.NotFound();
+
+            var review = mapper.Map<ReviewDto>(repo.GetReview(id));
+            
+            return Results.Ok(review);
         })
         .WithName("GetReviewById")
         .WithOpenApi()
-        .Produces<Review>(StatusCodes.Status200OK)
+        .Produces<ReviewDto>(StatusCodes.Status200OK)
         .Produces(StatusCodes.Status404NotFound);
 
-        group.MapPut("/{id}", async (int id, Review review, AnimeReviewDbContext db) =>
+        group.MapGet("anime/{animeid}", (int id, [FromQuery] int animeId, IReviewRepository repo, IMapper mapper) =>
         {
-            var affected = await db.Reviews
-                .Where(model => model.Id == id)
-                .ExecuteUpdateAsync(setters => setters
-                  .SetProperty(m => m.Id, review.Id)
-                  .SetProperty(m => m.Title, review.Title)
-                  .SetProperty(m => m.Text, review.Text)
-                  .SetProperty(m => m.Rating, review.Rating)
-                );
+            var reviews = mapper.Map<List<ReviewDto>>(repo.GetReviewsOfAnime(animeId));
 
-            return affected == 1 ? Results.Ok() : Results.NotFound();
+            return Results.Ok(reviews);
+        })
+        .WithName("GetReviewOfAnime")
+        .WithOpenApi()
+        .Produces<ReviewDto>(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status404NotFound);
+
+        group.MapPut("/{id}", (int id, ReviewDto reviewDto, IReviewRepository repo, IMapper mapper) =>
+        {
+            if ( reviewDto == null)
+                return Results.BadRequest();
+
+            if (id != reviewDto.Id)
+                return Results.BadRequest();
+
+            if (!repo.ReviewExists(id))
+                return Results.BadRequest();
+
+            var reviewMap = mapper.Map<Review>(reviewDto);
+
+            if (!repo.UpdateReview(reviewMap))
+                return Results.StatusCode(StatusCodes.Status500InternalServerError);
+
+            return Results.NoContent();
         })
         .WithName("UpdateReview")
         .WithOpenApi()
         .Produces(StatusCodes.Status404NotFound)
         .Produces(StatusCodes.Status204NoContent);
 
-        group.MapPost("/", async (Review review, AnimeReviewDbContext db) =>
+        group.MapPost("/", (ReviewDto reviewDto, [FromQuery] int animeId, [FromQuery] int reviewerId, 
+            IReviewRepository repo, IMapper mapper, IAnimeRepository animeRepo, IReviewerRepository reviewerRepo) =>
         {
-            db.Reviews.Add(review);
-            await db.SaveChangesAsync();
-            return Results.Created($"/api/Review/{review.Id}", review);
+            if (reviewDto == null)
+                return Results.BadRequest();
+
+            var reviews = repo.GetReviews()
+                .Where(r => r.Title.Trim().ToUpper() == reviewDto.Title.TrimEnd().ToUpper())
+                .FirstOrDefault();
+
+            if (reviews != null)
+                return Results.StatusCode(StatusCodes.Status422UnprocessableEntity);
+
+            var reviewMap = mapper.Map<Review>(reviewDto);
+            reviewMap.Anime = animeRepo.GetAnime(animeId);
+            reviewMap.Reviewer = reviewerRepo.GetReviewer(reviewerId);
+
+            if (!repo.CreateReview(reviewMap))
+                return Results.StatusCode(StatusCodes.Status500InternalServerError);
+
+            return Results.Ok("Successfully created");
         })
         .WithName("CreateReview")
         .WithOpenApi()
-        .Produces<Review>(StatusCodes.Status201Created);
+        .Produces<ReviewDto>(StatusCodes.Status201Created);
 
-        group.MapDelete("/{id}", async (int id, AnimeReviewDbContext db) =>
+        group.MapDelete("/{id}", (int id, IReviewRepository repo) =>
         {
-            var affected = await db.Reviews
-                .Where(model => model.Id == id)
-                .ExecuteDeleteAsync();
+            if (!repo.ReviewExists(id))
+                return Results.NotFound();
 
-            return affected == 1 ? Results.Ok() : Results.NotFound();
+            var reviewToDelete = repo.GetReview(id);
+
+            if (!repo.DeleteReview(reviewToDelete))
+                return Results.NotFound();
+
+            return Results.NoContent();
         })
         .WithName("DeleteReview")
         .WithOpenApi()

@@ -1,7 +1,8 @@
-﻿using Microsoft.EntityFrameworkCore;
-using AnimeReviewsData.Data;
-using AnimeReviewsData.Model;
-using Microsoft.AspNetCore.OpenApi;
+﻿using AnimeReviewsData.Model;
+using AnimeReviewsData.Contracts;
+using AutoMapper;
+using AnimeReviewsApi.DTOs;
+using Microsoft.AspNetCore.Mvc;
 
 namespace AnimeReviewsApi.Endpoints;
 
@@ -11,62 +12,101 @@ public static class AuthorEndpoints
     {
         var group = routes.MapGroup("/api/Author").WithTags(nameof(Author));
 
-        group.MapGet("/", async (AnimeReviewDbContext db) =>
+        group.MapGet("/", (IAuthorRepository repo, IMapper mapper) =>
         {
-            return await db.Authors.ToListAsync();
+            var authors = mapper.Map<List<AuthorDto>>(repo.GetAuthors());
+            return authors;
         })
         .WithName("GetAllAuthors")
         .WithOpenApi()
-        .Produces<List<Author>>(StatusCodes.Status200OK);
+        .Produces<List<AuthorDto>>(StatusCodes.Status200OK);
 
-        group.MapGet("/{id}", async (int id, AnimeReviewDbContext db) =>
+        group.MapGet("/{id}", (int id, IAuthorRepository repo, IMapper mapper) =>
         {
-            return await db.Authors.AsNoTracking()
-                .FirstOrDefaultAsync(model => model.Id == id)
-                is Author model
-                    ? Results.Ok(model)
-                    : Results.NotFound();
+            if (!repo.AuthorExists(id))
+                return Results.NotFound();
+
+            var author = mapper.Map<AuthorDto>(repo.GetAuthor(id));
+
+            return Results.Ok(author);
         })
         .WithName("GetAuthorById")
         .WithOpenApi()
-        .Produces<Author>(StatusCodes.Status200OK)
+        .Produces<AuthorDto>(StatusCodes.Status200OK)
         .Produces(StatusCodes.Status404NotFound);
 
-        group.MapPut("/{id}", async (int id, Author author, AnimeReviewDbContext db) =>
+        group.MapGet("{authorId}/anime", (int id, IAuthorRepository repo, IMapper mapper) =>
         {
-            var affected = await db.Authors
-                .Where(model => model.Id == id)
-                .ExecuteUpdateAsync(setters => setters
-                  .SetProperty(m => m.Id, author.Id)
-                  .SetProperty(m => m.FirstName, author.FirstName)
-                  .SetProperty(m => m.LastName, author.LastName)
-                  .SetProperty(m => m.BirthDate, author.BirthDate)
-                );
+            if (!repo.AuthorExists(id))
+                return Results.NotFound();
 
-            return affected == 1 ? Results.Ok() : Results.NotFound();
+            var animes = mapper.Map<List<AnimeDto>>(repo.GetAnimeByAuthor(id));
+
+            return Results.Ok(animes);
+        })
+        .WithName("GetAnimeByAuthor")
+        .WithOpenApi()
+        .Produces<AuthorDto>(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status404NotFound);
+
+        group.MapPut("/{id}", (int id, AuthorDto authorDto, IAuthorRepository repo, IMapper mapper) =>
+        {
+            if (authorDto == null)
+                return Results.BadRequest();
+
+            if (id != authorDto.Id)
+                return Results.BadRequest();
+
+            if (!repo.AuthorExists(id))
+                return Results.BadRequest();
+
+            var authorMap = mapper.Map<Author>(authorDto);
+
+            if(!repo.UpdateAuthor(authorMap))
+                return Results.StatusCode(StatusCodes.Status500InternalServerError);
+
+            return Results.NoContent();
+            
         })
         .WithName("UpdateAuthor")
         .WithOpenApi()
         .Produces(StatusCodes.Status404NotFound)
         .Produces(StatusCodes.Status204NoContent);
 
-        group.MapPost("/", async (Author author, AnimeReviewDbContext db) =>
+        group.MapPost("/", (AuthorDto authorDto, IAuthorRepository repo, IMapper mapper) =>
         {
-            db.Authors.Add(author);
-            await db.SaveChangesAsync();
-            return Results.Created($"/api/Author/{author.Id}", author);
+            if (authorDto == null)
+                return Results.BadRequest();
+
+            var author = repo.GetAuthors()
+                .Where(au => au.LastName.Trim().ToUpper() == authorDto.LastName.TrimEnd().ToUpper())
+                .FirstOrDefault();
+
+            if (author != null)
+                return Results.StatusCode(StatusCodes.Status422UnprocessableEntity);
+
+            var authorMap = mapper.Map<Author>(authorDto);
+
+            if (!repo.CreateAuthor(authorMap))
+                return Results.BadRequest();
+
+            return Results.NoContent();
         })
         .WithName("CreateAuthor")
         .WithOpenApi()
         .Produces<Author>(StatusCodes.Status201Created);
 
-        group.MapDelete("/{id}", async (int id, AnimeReviewDbContext db) =>
+        group.MapDelete("/{id}", (int id, IAuthorRepository repo) =>
         {
-            var affected = await db.Authors
-                .Where(model => model.Id == id)
-                .ExecuteDeleteAsync();
+            if (!repo.AuthorExists(id))
+                return Results.NotFound();
 
-            return affected == 1 ? Results.Ok() : Results.NotFound();
+            var authorToDelete = repo.GetAuthor(id);
+
+            if (!repo.DeleteAuthor(authorToDelete))
+                return Results.BadRequest();
+
+            return Results.NoContent();
         })
         .WithName("DeleteAuthor")
         .WithOpenApi()

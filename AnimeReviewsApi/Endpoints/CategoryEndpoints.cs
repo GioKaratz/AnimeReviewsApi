@@ -1,7 +1,7 @@
-﻿using Microsoft.EntityFrameworkCore;
-using AnimeReviewsData.Data;
-using AnimeReviewsData.Model;
-using Microsoft.AspNetCore.OpenApi;
+﻿using AnimeReviewsData.Model;
+using AnimeReviewsData.Contracts;
+using AutoMapper;
+using AnimeReviewsApi.DTOs;
 
 namespace AnimeReviewsApi.Endpoints;
 
@@ -11,60 +11,99 @@ public static class CategoryEndpoints
     {
         var group = routes.MapGroup("/api/Category").WithTags(nameof(Category));
 
-        group.MapGet("/", async (AnimeReviewDbContext db) =>
+        group.MapGet("/", (ICategoryRepository repo, IMapper mapper) =>
         {
-            return await db.Categories.ToListAsync();
+            var categories = mapper.Map<List<CategoryDto>>(repo.GetCategories());
+            return Results.Ok(categories);
         })
         .WithName("GetAllCategorys")
         .WithOpenApi()
-        .Produces<List<Category>>(StatusCodes.Status200OK);
+        .Produces<List<CategoryDto>>(StatusCodes.Status200OK);
 
-        group.MapGet("/{id}", async (int id, AnimeReviewDbContext db) =>
+        group.MapGet("/{id}", (int id, ICategoryRepository repo, IMapper mapper) =>
         {
-            return await db.Categories.AsNoTracking()
-                .FirstOrDefaultAsync(model => model.Id == id)
-                is Category model
-                    ? Results.Ok(model)
-                    : Results.NotFound();
+            if (!repo.CategoryExists(id))
+                return Results.NotFound();
+
+            var category = mapper.Map<CategoryDto>(repo.GetCategory(id));
+
+            return Results.Ok(category);
         })
         .WithName("GetCategoryById")
         .WithOpenApi()
-        .Produces<Category>(StatusCodes.Status200OK)
+        .Produces<CategoryDto>(StatusCodes.Status200OK)
         .Produces(StatusCodes.Status404NotFound);
 
-        group.MapPut("/{id}", async (int id, Category category, AnimeReviewDbContext db) =>
+        group.MapGet("/{categoryId}/anime", (int id, ICategoryRepository repo, IMapper mapper) =>
         {
-            var affected = await db.Categories
-                .Where(model => model.Id == id)
-                .ExecuteUpdateAsync(setters => setters
-                  .SetProperty(m => m.Id, category.Id)
-                  .SetProperty(m => m.Name, category.Name)
-                );
+            var animes = mapper.Map<List<AnimeDto>>(repo.GetAnimeByCategory(id));
 
-            return affected == 1 ? Results.Ok() : Results.NotFound();
+            return Results.Ok(animes);
+        })
+        .WithName("GetAnimeByCategoryById")
+        .WithOpenApi()
+        .Produces<Anime>(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status404NotFound);
+
+        group.MapPut("/{id}", (int id, CategoryDto categoryDto, ICategoryRepository repo, IMapper mapper) =>
+        {
+            if (categoryDto == null)
+                return Results.BadRequest();
+
+            if (id != categoryDto.Id)
+                return Results.BadRequest();
+
+            if (!repo.CategoryExists(id))
+                return Results.NotFound();
+
+            var categoryMap = mapper.Map<Category>(categoryDto);
+
+            if (!repo.UpdateCategory(categoryMap))
+                return Results.StatusCode(StatusCodes.Status500InternalServerError);
+
+            return Results.NoContent();
         })
         .WithName("UpdateCategory")
         .WithOpenApi()
         .Produces(StatusCodes.Status404NotFound)
         .Produces(StatusCodes.Status204NoContent);
 
-        group.MapPost("/", async (Category category, AnimeReviewDbContext db) =>
+
+        group.MapPost("/", (CategoryDto categoryDto, ICategoryRepository repo, IMapper mapper) =>
         {
-            db.Categories.Add(category);
-            await db.SaveChangesAsync();
-            return Results.Created($"/api/Category/{category.Id}", category);
+            if (categoryDto == null)
+                return Results.BadRequest();
+
+            var category = repo.GetCategories()
+                .Where(c => c.Name.Trim().ToUpper() == categoryDto.Name.TrimEnd().ToUpper())
+                .FirstOrDefault();
+
+            if (category != null)
+                return Results.StatusCode(StatusCodes.Status422UnprocessableEntity);
+
+            var categoryMap = mapper.Map<Category>(categoryDto);
+
+            if (!repo.CreateCategory(categoryMap))
+                return Results.StatusCode(StatusCodes.Status500InternalServerError);
+
+            return Results.NoContent();
+
         })
         .WithName("CreateCategory")
         .WithOpenApi()
-        .Produces<Category>(StatusCodes.Status201Created);
+        .Produces<CategoryDto>(StatusCodes.Status201Created);
 
-        group.MapDelete("/{id}", async (int id, AnimeReviewDbContext db) =>
+        group.MapDelete("/{id}", async (int id, ICategoryRepository repo, IMapper mapper) =>
         {
-            var affected = await db.Categories
-                .Where(model => model.Id == id)
-                .ExecuteDeleteAsync();
+            if (!repo.CategoryExists(id))
+                return Results.NotFound();
 
-            return affected == 1 ? Results.Ok() : Results.NotFound();
+            var categoryToDelete = repo.GetCategory(id);
+
+            if (!repo.DeleteCategory(categoryToDelete))
+                return Results.BadRequest();
+
+            return Results.NoContent();
         })
         .WithName("DeleteCategory")
         .WithOpenApi()
