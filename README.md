@@ -1,5 +1,5 @@
 # AnimeReviewsApi
-This is a RESTful API for managing anime reviews. It provides endpoints to access and manipulate anime reviews, reviewers, categories, authors, and more.
+This is a RESTful API for managing anime reviews. It provides endpoints to access and manipulate anime reviews, reviewers, categories and authors
 
 API Endpoints
 
