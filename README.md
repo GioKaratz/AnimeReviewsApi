@@ -1,8 +1,7 @@
 # AnimeReviewsApi
 This is a RESTful API for managing anime reviews. It provides endpoints to access and manipulate anime reviews, reviewers, categories and authors
 
-API Endpoints
-
+**API Endpoints**  
 Anime Endpoints  
 GET /api/anime: Retrieve a list of all anime.  
 GET /api/anime/{id}: Retrieve details of a specific anime by its ID.  
@@ -38,7 +37,7 @@ POST /api/authors: Create a new author entry.
 PUT /api/authors/{id}: Update an existing author entry by their ID.  
 DELETE /api/authors/{id}: Delete an author entry by their ID.  
 
-Technologies Used  
+**Technologies Used**  
 This API was built using the following technologies and frameworks:
 
 .NET 7  
@@ -47,3 +46,14 @@ Entity Framework Core
 AutoMapper  
 Swagger/OpenAPI  
 Microsoft SQL Server  
+
+**CORS Configuration**  
+The API is configured to allow cross-origin requests from any domain (AllowAnyOrigin). This is suitable for development but should be modified for production deployments to restrict allowed origins.
+
+**How to use**  
+Clone this repository to your local machine  
+Set up the database connection:  
+  Edit the appsettings.json file located in the AnimeReviewsApi project to specify your SQL Server connection string  
+To create and apply the initial database schema, run the following command in the AnimeReviewsData project:  
+  dotnet Update - Database
+    
