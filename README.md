@@ -55,5 +55,6 @@ Clone this repository to your local machine
 Set up the database connection:  
   Edit the appsettings.json file located in the AnimeReviewsApi project to specify your SQL Server connection string  
 To create and apply the initial database schema, run the following command in the AnimeReviewsData project:  
-  dotnet Update - Database
-    
+ ```bash
+ dotnet Update - Database
+```
